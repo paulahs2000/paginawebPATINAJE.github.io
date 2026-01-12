@@ -1,0 +1,246 @@
+import React, { useState, useMemo, useEffect } from 'react';
+import Layout from './components/Layout';
+import DocumentGrid from './components/DocumentGrid';
+import { INITIAL_DOCUMENTS } from './constants';
+import { Category, Document } from './types';
+import { Search, Sparkles, Filter, Calendar, Zap, MessageSquare, FileText, Star, Info } from 'lucide-react';
+import { askGeminiAboutDocs } from './services/geminiService';
+
+const App: React.FC = () => {
+  const [activeTab, setActiveTab] = useState('home');
+  const [documents, setDocuments] = useState<Document[]>(INITIAL_DOCUMENTS);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<Category | 'All'>('All');
+  
+  // AI State
+  const [aiQuery, setAiQuery] = useState('');
+  const [aiResponse, setAiResponse] = useState('');
+  const [isAiLoading, setIsAiLoading] = useState(false);
+
+  // Limpiar filtros al cambiar de pestaña para mejorar UX
+  useEffect(() => {
+    if (activeTab === 'home') {
+      setSearchQuery('');
+      setSelectedCategory('All');
+    }
+  }, [activeTab]);
+
+  const handleToggleFavorite = (id: string) => {
+    setDocuments(prev => prev.map(doc => 
+      doc.id === id ? { ...doc, isFavorite: !doc.isFavorite } : doc
+    ));
+  };
+
+  const filteredDocs = useMemo(() => {
+    return documents.filter(doc => {
+      const name = doc.name?.toLowerCase() || '';
+      const description = doc.description?.toLowerCase() || '';
+      const query = searchQuery.toLowerCase();
+      
+      const matchesSearch = name.includes(query) || description.includes(query);
+      const matchesCategory = selectedCategory === 'All' || doc.category === selectedCategory;
+      const isFavoriteTab = activeTab === 'favorites' ? doc.isFavorite : true;
+      
+      return matchesSearch && matchesCategory && isFavoriteTab;
+    });
+  }, [documents, searchQuery, selectedCategory, activeTab]);
+
+  const stats = useMemo(() => ({
+    total: documents.length,
+    favorites: documents.filter(d => d.isFavorite).length,
+    regulations: documents.filter(d => d.category === Category.REGLAMENTOS).length
+  }), [documents]);
+
+  const handleAiAsk = async () => {
+    if (!aiQuery.trim()) return;
+    setIsAiLoading(true);
+    try {
+      const res = await askGeminiAboutDocs(aiQuery, documents);
+      setAiResponse(res || 'No pude obtener una respuesta en este momento.');
+    } catch (error) {
+      console.error("Error con Gemini:", error);
+      setAiResponse("Hubo un error al conectar con el asistente.");
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  return (
+    <Layout activeTab={activeTab} setActiveTab={setActiveTab}>
+      {activeTab === 'home' && (
+        <div className="space-y-8 animate-in fade-in duration-500">
+          {/* Hero Section */}
+          <div className="relative overflow-hidden bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-8 text-white shadow-2xl shadow-blue-200">
+            <div className="relative z-10 max-w-2xl">
+              <h2 className="text-3xl md:text-4xl font-bold mb-4">Patinaje Artístico 2026</h2>
+              <p className="text-blue-100 text-lg mb-6 leading-relaxed">
+                Central de gestión para tu temporada competitiva. Organiza reglamentos, circulares y calendarios en un solo lugar.
+              </p>
+              <div className="flex flex-wrap gap-4">
+                <button onClick={() => setActiveTab('docs')} className="bg-white text-blue-600 px-6 py-3 rounded-2xl font-bold hover:bg-blue-50 transition-all flex items-center gap-2">
+                  Ver Documentos <Zap size={18} />
+                </button>
+                <div className="flex items-center gap-2 text-sm bg-blue-500/30 px-4 py-2 rounded-xl backdrop-blur-md">
+                   <Calendar size={18} />
+                   <span>Próximo evento: 15 Ene 2026</span>
+                </div>
+              </div>
+            </div>
+            <div className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/4 w-96 h-96 bg-white/10 rounded-full blur-3xl"></div>
+          </div>
+
+          {/* Quick Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {[
+                { label: 'Archivos Totales', value: stats.total, icon: FileText, color: 'text-blue-600', bg: 'bg-blue-50' },
+                { label: 'Favoritos', value: stats.favorites, icon: Star, color: 'text-amber-500', bg: 'bg-amber-50' },
+                { label: 'Reglamentos', value: stats.regulations, icon: Filter, color: 'text-emerald-500', bg: 'bg-emerald-50' }
+              ].map((stat, i) => (
+                <div key={i} className="bg-white p-6 rounded-2xl border border-slate-100 flex items-center gap-4">
+                  <div className={`p-4 ${stat.bg} ${stat.color} rounded-2xl`}>
+                    <stat.icon size={24} />
+                  </div>
+                  <div>
+                    <p className="text-slate-500 text-sm font-medium">{stat.label}</p>
+                    <p className="text-2xl font-bold text-slate-800">{stat.value}</p>
+                  </div>
+                </div>
+              ))}
+          </div>
+
+          {/* AI Assistant Section */}
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
+            <div className="flex items-center gap-2 mb-6">
+              <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg">
+                <Sparkles size={20} />
+              </div>
+              <h3 className="text-lg font-bold text-slate-800">Asistente de Temporada (Gemini)</h3>
+            </div>
+            
+            <div className="flex flex-col gap-4">
+              <div className="relative">
+                <input 
+                  type="text" 
+                  value={aiQuery}
+                  onChange={(e) => setAiQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAiAsk()}
+                  placeholder="Ej: ¿Cuándo es el primer regional?"
+                  className="w-full pl-6 pr-14 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-blue-500 outline-none transition-all"
+                />
+                <button 
+                  onClick={handleAiAsk}
+                  disabled={isAiLoading || !aiQuery.trim()}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 bg-blue-600 text-white p-2.5 rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50"
+                >
+                  {isAiLoading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <MessageSquare size={20} />}
+                </button>
+              </div>
+
+              {aiResponse && (
+                <div className="p-6 bg-indigo-50/50 rounded-2xl border border-indigo-100 text-indigo-900 animate-in slide-in-from-top-4 duration-300">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-1 text-indigo-400 shrink-0"><Sparkles size={16} /></div>
+                    <p className="text-sm leading-relaxed">{aiResponse}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Recent Documents Preview */}
+          <div>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold text-slate-800">Tus Favoritos</h3>
+              <button onClick={() => setActiveTab('favorites')} className="text-blue-600 font-semibold text-sm hover:underline">Ver todos</button>
+            </div>
+            <DocumentGrid documents={documents.filter(d => d.isFavorite).slice(0, 4)} onToggleFavorite={handleToggleFavorite} />
+          </div>
+        </div>
+      )}
+
+      {(activeTab === 'docs' || activeTab === 'favorites') && (
+        <div className="space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-bold text-slate-800">
+                {activeTab === 'favorites' ? 'Tus Favoritos' : 'Todos los Documentos'}
+              </h2>
+              <p className="text-slate-500 text-sm">Gestiona y filtra tus archivos de la temporada.</p>
+            </div>
+            
+            <div className="flex flex-wrap gap-2">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <input 
+                  type="text" 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Filtrar por nombre..." 
+                  className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <select 
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value as any)}
+                className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium outline-none cursor-pointer"
+              >
+                <option value="All">Todas las Categorías</option>
+                {Object.values(Category).map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <DocumentGrid documents={filteredDocs} onToggleFavorite={handleToggleFavorite} />
+          {filteredDocs.length === 0 && (
+            <div className="text-center py-20 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
+              <p className="text-slate-400">No se encontraron documentos con estos filtros.</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'about' && (
+        <div className="max-w-3xl mx-auto py-8">
+          <div className="bg-white rounded-3xl border border-slate-200 p-8 space-y-8">
+            <div className="text-center">
+              <div className="inline-block p-4 bg-blue-100 text-blue-600 rounded-3xl mb-4">
+                <Info size={40} />
+              </div>
+              <h2 className="text-2xl font-bold text-slate-800">Sobre la Aplicación</h2>
+              <p className="text-slate-500">Gestor Personal - Temporada 2026</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <h4 className="font-bold text-slate-800">Propósito</h4>
+                <p className="text-slate-600 text-sm leading-relaxed">
+                  Esta herramienta centraliza la documentación para la temporada 2026 de patinaje artístico sobre ruedas.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <h4 className="font-bold text-slate-800">Estado del Sistema</h4>
+                <p className="text-emerald-600 text-sm font-medium">Conectado a Gemini AI</p>
+              </div>
+            </div>
+
+            <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
+              <h4 className="font-bold text-slate-800 mb-2">Notas Personales</h4>
+              <p className="text-slate-600 text-sm italic">
+                "Este año el objetivo es el Campeonato Nacional. Mantener los reglamentos actualizados es clave."
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-4 text-xs text-slate-400 pt-8 border-t border-slate-100">
+              <p>© 2026 - Herramienta de uso personal.</p>
+              <p>Tecnologías: React, Tailwind CSS, Google Gemini API.</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </Layout>
+  );
+};
+
+export default App;
